@@ -9,12 +9,26 @@ import cv2
 import time
 import matplotlib.pyplot as plt
 import scipy
+
+#SET ROI
+x_start, y_start, width, height = 100, 100, 100, 100
+
+#SET BIASES
+biases = {
+    'bias_diff': 80,
+    'bias_diff_off': 52,
+    'bias_diff_on': 115,
+    'bias_fo': 74,
+    'bias_hpf': 0,
+    'bias_refr': 68
+}
+
+#%%
 event_height, event_width = 720, 1280
 color = ColorPalette(2) #gray
 
-#%%
 stop_event = threading.Event()
-
+#%%
 class PeriodicRecorder:
     def __init__(self, max_duration, accumulation_time=1, fps=30, batch_rate=1):
         accumulation_time = int(accumulation_time*10**6)
@@ -28,6 +42,7 @@ class PeriodicRecorder:
         self.accumulation_time = accumulation_time
         self.original_accumulation_time = accumulation_time
         self.resetting = False
+        self.roi = None
     def set_frame(self, ts, frame):
         self.frame = frame
         self.received_frame = False 
@@ -39,8 +54,20 @@ class PeriodicRecorder:
     def is_frame_available(self):
         return not self.received_frame
     def run(self):
-        device = initiate_device(path="")
-        device.get_i_roi().set_ROIs_from_bitword([100, 100, 100, 100])
+        device = mv_hal.DeviceDiscovery.open(serial="") # opens the first available camera
+        success = device.get_i_roi().set_mode(mv_hal.I_ROI.Mode(0))
+        if success:
+            wind_obj = device.get_i_roi().Window(x_start, y_start, width, height)
+            device.get_i_roi().set_window(wind_obj)
+            device.get_i_roi().enable(True)
+        else:
+            print("Failed to set roi")
+
+        for bname, bval in biases.items():
+            if not device.get_i_ll_biases().set(bname, bval):
+                print("Failed to set biases")
+
+
         iterator = EventsIterator.from_device(
             device=device,
             delta_t=1e6/self.batch_rate,

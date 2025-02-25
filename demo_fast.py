@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import scipy
 
 #SET ROI
+roi = False
 x_start, y_start, width, height = 100, 100, 100, 100
 
 #SET BIASES
@@ -23,6 +24,10 @@ biases = {
     'bias_refr': 68
 }
 
+
+fps = 1000 #display rate - slow-mo if high since we can only display ~30fps
+accumulation = 1/fps #exposure per frame
+
 #%%
 event_height, event_width = 720, 1280
 color = ColorPalette(2) #gray
@@ -33,35 +38,35 @@ class PeriodicRecorder:
     def __init__(self, max_duration, accumulation_time=1, fps=30, batch_rate=1):
         accumulation_time = int(accumulation_time*10**6)
         max_duration = int(max_duration*10**6) if max_duration is not None else None
-        self.frame = np.zeros((event_height, event_width, 3), dtype=np.uint8)
+        self.frames = []
         self.generator = PeriodicFrameGenerationAlgorithm(event_width, event_height, accumulation_time, fps)
         self.generator.set_output_callback(self.set_frame)
         self.batch_rate = batch_rate
         self.max_duration = max_duration
-        self.received_frame = False
         self.accumulation_time = accumulation_time
         self.original_accumulation_time = accumulation_time
         self.resetting = False
         self.roi = None
     def set_frame(self, ts, frame):
-        self.frame = frame
-        self.received_frame = False 
+        if len(self.frames) > 1000:
+            self.frames = []
+        self.frames.append(frame)
     def reset(self):
         self.resetting = True
     def get_frame(self):
-        self.received_frame = True
-        return self.frame
+        return self.frames.pop(0)
     def is_frame_available(self):
-        return not self.received_frame
+        return len(self.frames) != 0
     def run(self):
         device = mv_hal.DeviceDiscovery.open(serial="") # opens the first available camera
-        success = device.get_i_roi().set_mode(mv_hal.I_ROI.Mode(0))
-        if success:
-            wind_obj = device.get_i_roi().Window(x_start, y_start, width, height)
-            device.get_i_roi().set_window(wind_obj)
-            device.get_i_roi().enable(True)
-        else:
-            print("Failed to set roi")
+        if roi:
+            success = device.get_i_roi().set_mode(mv_hal.I_ROI.Mode(0))
+            if success:
+                wind_obj = device.get_i_roi().Window(x_start, y_start, width, height)
+                device.get_i_roi().set_window(wind_obj)
+                device.get_i_roi().enable(True)
+            else:
+                print("Failed to set roi")
 
         for bname, bval in biases.items():
             if not device.get_i_ll_biases().set(bname, bval):
@@ -91,15 +96,14 @@ class PeriodicRecorder:
         if self.resetting:
             print("resetting")
             self.generator.reset()
+            self.frames = []
             self.resetting = False
             self.run()
         else:
             print("end of iteration")
 # %%
 stop_event.clear()
-fps = 1000 #display rate - slow-mo if high since we can only display ~30fps
 duration = None
-accumulation = 1/fps #exposure per frame
 blur = 0
 try:
     recorder = PeriodicRecorder(max_duration=duration, fps=fps, accumulation_time=accumulation, batch_rate=100)

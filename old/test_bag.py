@@ -8,7 +8,6 @@ import matplotlib.pyplot as plt
 import soundfile as sf
 import scipy.signal as signal
 import librosa
-import time
 
 sr = 16000
 gt = librosa.load("abe_speech_gt.mp3", sr=sr)[0]
@@ -30,7 +29,6 @@ events["y"] = events["y"]-events["y"].min()
 w, h = events["x"].max()+1, events["y"].max()+1
 #%%
 def compute_flow(alg, batch_duration=1.0e6):
-    t1 = time.time()
     nbatches = np.ceil(events["t"].max()/batch_duration).astype(int)
     out = []
     for i in trange(nbatches):
@@ -38,7 +36,6 @@ def compute_flow(alg, batch_duration=1.0e6):
         buffer = alg.get_empty_output_buffer()
         alg.process_events(batch, buffer)
         out.append(buffer.numpy().copy())
-    print("Time taken:", time.time()-t1)
     out = np.concatenate(out)
     return out
 def mel(out, f=f):
@@ -118,7 +115,7 @@ def process(out):
 # out_der = process(out)
 #%%
 time_flow = TimeGradientFlowAlgorithm(w, h, radius = 7, min_flow_mag = 10.0, bit_cut = 0)
-out = compute_flow(time_flow, batch_duration=12.0e6)
+out = compute_flow(time_flow, batch_duration=1.0e6)
 out_der = process(out)
 #%%
 # plane_flow = PlaneFittingFlowAlgorithm(w, h, radius = 3, normalized_flow_magnitude = 100, min_spatial_consistency_ratio = -1, max_spatial_consistency_ratio = -1, fitting_error_tolerance = -1, neighbor_sample_fitting_fraction = 0.30000001192092896)

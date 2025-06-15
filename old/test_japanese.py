@@ -8,14 +8,13 @@ import matplotlib.pyplot as plt
 import soundfile as sf
 import scipy.signal as signal
 import librosa
-import time
 
 sr = 16000
-gt = librosa.load("abe_speech_gt.mp3", sr=sr)[0]
+gt = librosa.load("japanese_gt.wav", sr=sr)[0]
 
-events = np.load("abe_speech_bag.npy")
+events = np.load("japanese_speech.npy")
 
-s, e, f = 2.5, 11.7, 1e5 #12.0
+s, e, f = 2.6, 7.7, 1e5 #12.0
 
 cond = (events["t"]>=s*1e6) & (events["t"]<e*1e6)
 events = events[cond]
@@ -30,7 +29,6 @@ events["y"] = events["y"]-events["y"].min()
 w, h = events["x"].max()+1, events["y"].max()+1
 #%%
 def compute_flow(alg, batch_duration=1.0e6):
-    t1 = time.time()
     nbatches = np.ceil(events["t"].max()/batch_duration).astype(int)
     out = []
     for i in trange(nbatches):
@@ -38,7 +36,6 @@ def compute_flow(alg, batch_duration=1.0e6):
         buffer = alg.get_empty_output_buffer()
         alg.process_events(batch, buffer)
         out.append(buffer.numpy().copy())
-    print("Time taken:", time.time()-t1)
     out = np.concatenate(out)
     return out
 def mel(out, f=f):
@@ -118,7 +115,7 @@ def process(out):
 # out_der = process(out)
 #%%
 time_flow = TimeGradientFlowAlgorithm(w, h, radius = 7, min_flow_mag = 10.0, bit_cut = 0)
-out = compute_flow(time_flow, batch_duration=12.0e6)
+out = compute_flow(time_flow, batch_duration=1.0e6)
 out_der = process(out)
 #%%
 # plane_flow = PlaneFittingFlowAlgorithm(w, h, radius = 3, normalized_flow_magnitude = 100, min_spatial_consistency_ratio = -1, max_spatial_consistency_ratio = -1, fitting_error_tolerance = -1, neighbor_sample_fitting_fraction = 0.30000001192092896)
@@ -170,29 +167,30 @@ out_der_ = butter_highpass_filter(out_der_, 100, f)
 out_der_ = out_der_ / np.abs(out_der_).max()
 #now resample out_der to gt
 out_der_sr = librosa.resample(out_der_, orig_sr=f, target_sr=sr)
-gt = librosa.load("abe_speech_gt.mp3", sr=sr)[0]
 
 from scipy.signal import correlate
-correlation = correlate(out_der_sr, gt, mode='full')
-lags = np.arange(-len(out_der_sr) + 1, len(gt))
-#abs peak
-peak_ind = np.argmax(np.abs(correlation))
-peak_lag = lags[peak_ind]
-if peak_lag < 0:
-    out_der_sr = np.pad(out_der_sr, (-peak_lag, 0), constant_values=0)#out_der_sr[0])
-    out_der_sr = out_der_sr[:len(gt)]
-else:
-    out_der_sr = np.pad(out_der_sr, (0, peak_lag), constant_values=0)#out_der_sr[-1])
-    out_der_sr = out_der_sr[-len(gt):]
-print("Peak lag:", peak_lag)
+peak_lag = np.inf
+while peak_lag != 0:
+    correlation = correlate(out_der_sr, gt, mode='full')
+    lags = np.arange(-len(out_der_sr) + 1, len(gt))
+    #abs peak
+    peak_ind = np.argmax(np.abs(correlation))
+    peak_lag = lags[peak_ind]
+    if peak_lag < 0:
+        out_der_sr = np.pad(out_der_sr, (-peak_lag, 0), constant_values=0)#out_der_sr[0])
+        out_der_sr = out_der_sr[:len(gt)]
+    else:
+        out_der_sr = np.pad(out_der_sr, (0, peak_lag), constant_values=0)#out_der_sr[-1])
+        out_der_sr = out_der_sr[-len(gt):]
+    print("Peak lag:", peak_lag)
 
 #pad to gt length
 out_der_sr = np.pad(out_der_sr, (0, len(gt)-len(out_der_sr)), constant_values=0)#out_der_sr[-1])
 from pesq import pesq
 from pystoi import stoi
 print("pesq is", pesq(sr, gt, out_der_sr, 'wb'), "stoi is", stoi(gt, out_der_sr, sr, extended=False))
-sf.write("abe_speech_bag_hat.wav", out_der_sr, sr)
-sf.write("abe_speech_gt_sr.wav", gt, sr)
+sf.write("japanese_hat.wav", out_der_sr, sr)
+sf.write("japanese_gt_sr.wav", gt, sr)
 #%%
 # import librosa
 # n_mels = 100

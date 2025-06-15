@@ -29,6 +29,27 @@ events["x"] = events["x"]-events["x"].min()
 events["y"] = events["y"]-events["y"].min()
 w, h = events["x"].max()+1, events["y"].max()+1
 #%%
+def align(x_hat, x):
+    from scipy.signal import correlate
+    peak_lag = np.inf
+    while peak_lag != 0:
+        correlation = correlate(x_hat, x, mode='full')
+        lags = np.arange(-len(x_hat) + 1, len(x))
+        #abs peak
+        peak_ind = np.argmax(np.abs(correlation))
+        peak_lag = lags[peak_ind]
+        if peak_lag < 0:
+            x_hat = np.pad(x_hat, (-peak_lag, 0), constant_values=0)#out_der_sr[0])
+            x_hat = x_hat[:len(x)]
+        else:
+            x_hat = np.pad(x_hat, (0, peak_lag), constant_values=0)#out_der_sr[-1])
+            x_hat = x_hat[-len(x):]
+        if correlation[peak_ind] < 0:
+            print("Negative correlation, flipping sign")
+            x_hat = -x_hat
+        print("Peak lag:", peak_lag)
+    x_hat = np.pad(x_hat, (0, len(x)-len(x_hat)), constant_values=0)#out_der_sr[-1])
+    return x_hat
 def compute_flow(alg, batch_duration=1.0e6):
     t1 = time.time()
     nbatches = np.ceil(events["t"].max()/batch_duration).astype(int)
@@ -41,6 +62,13 @@ def compute_flow(alg, batch_duration=1.0e6):
     print("Time taken:", time.time()-t1)
     out = np.concatenate(out)
     return out
+def cf():
+    alg = TimeGradientFlowAlgorithm(w, h, radius = 7, min_flow_mag = 10.0, bit_cut = 0)
+    t1 = time.time()
+    buffer = alg.get_empty_output_buffer()
+    alg.process_events(events, buffer)
+    print("Time taken:", time.time()-t1)
+    return buffer.numpy().copy()
 def mel(out, f=f):
     n_mels = 100
     fmax = 4096
@@ -69,8 +97,12 @@ def process(out):
     mat_y = mat_y / counts.clip(1, None)
     mn, std = np.abs(mat_y).mean(), np.abs(mat_y).std()
     mat_y = np.clip(np.abs(mat_y), mn-5*std, mn+5*std) * np.sign(mat_y)
-    mag = np.sqrt(mat_x**2 + mat_y**2)
-    mat = mag * (np.sign(mat_y) if np.abs(mat_x).mean() < np.abs(mat_y).mean() else np.sign(mat_x))
+    mat_x = align(mat_x, mat_y)
+    from sklearn.decomposition import PCA
+    pca = PCA(n_components=1)
+    mat = pca.fit_transform(np.stack((mat_x, mat_y), axis=-1))[:,0]
+    # mag = np.sqrt(mat_x**2 + mat_y**2)
+    # mat = mag * (np.sign(mat_y) if np.abs(mat_x).mean() < np.abs(mat_y).mean() else np.sign(mat_x))
     
     # mat_x = mat_x / counts.clip(1, None)
     # mat_x = mat_x #/ np.abs(mat_x).max()
@@ -158,7 +190,7 @@ def butter_highpass_filter(data, cutoff, fs, order=5):
     return y
 from copy import deepcopy
 out_der_ = deepcopy(out_der)
-out_der_ = butter_lowpass_filter(out_der_, 10000, f)
+# out_der_ = butter_lowpass_filter(out_der_, 10000, f)
 # assert np.isfinite(out_der_).all()
 # mel(out_der_)
 out_der_ = np.cumsum(out_der_)
@@ -170,24 +202,12 @@ out_der_ = butter_highpass_filter(out_der_, 100, f)
 out_der_ = out_der_ / np.abs(out_der_).max()
 #now resample out_der to gt
 out_der_sr = librosa.resample(out_der_, orig_sr=f, target_sr=sr)
+import noisereduce
+# out_der_sr = noisereduce.reduce_noise(y=out_der_sr, sr=16000, time_constant_s=100)
 gt = librosa.load("abe_speech_gt.mp3", sr=sr)[0]
 
-from scipy.signal import correlate
-correlation = correlate(out_der_sr, gt, mode='full')
-lags = np.arange(-len(out_der_sr) + 1, len(gt))
-#abs peak
-peak_ind = np.argmax(np.abs(correlation))
-peak_lag = lags[peak_ind]
-if peak_lag < 0:
-    out_der_sr = np.pad(out_der_sr, (-peak_lag, 0), constant_values=0)#out_der_sr[0])
-    out_der_sr = out_der_sr[:len(gt)]
-else:
-    out_der_sr = np.pad(out_der_sr, (0, peak_lag), constant_values=0)#out_der_sr[-1])
-    out_der_sr = out_der_sr[-len(gt):]
-print("Peak lag:", peak_lag)
+out_der_sr = align(out_der_sr, gt)
 
-#pad to gt length
-out_der_sr = np.pad(out_der_sr, (0, len(gt)-len(out_der_sr)), constant_values=0)#out_der_sr[-1])
 from pesq import pesq
 from pystoi import stoi
 print("pesq is", pesq(sr, gt, out_der_sr, 'wb'), "stoi is", stoi(gt, out_der_sr, sr, extended=False))

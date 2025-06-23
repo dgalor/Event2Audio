@@ -1,0 +1,8 @@
+numpy
+torch
+scipy
+librosa
+soundfile
+pesq
+pystoi
+matplotlib

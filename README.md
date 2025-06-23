@@ -48,7 +48,7 @@ The script `launch_runs.py` enables processing a folder of recordings with eithe
 python launch_runs.py --event_dir EventRecordings --gt_dir GroundTruth --out_dir Output --mode online
 ```
 
-## Acknowledgments
+## Acknowledgements
 
 Authors: Mingxuan Cai*, Dekel Galor*, Amit Kohli, Jacob Yates, Laura Waller
 

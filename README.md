@@ -6,7 +6,7 @@ This project reconstructs audio from video data captured by an event camera. It 
 
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/dgalor/event-visual-vibrometry.git Event2Audio
+   git clone https://github.com/dgalor/Event2Audio.git
    cd Event2Audio
    ```
 

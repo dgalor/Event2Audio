@@ -1,3 +1,7 @@
 *.npy
 *.wav
 *.mp3
+*.zip
+__pycache__
+*.pyc
+*.txt

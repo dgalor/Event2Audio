@@ -30,7 +30,7 @@ assert os.path.exists(event_dir), f"Event recordings directory {event_dir} does 
 if not os.path.exists(out_dir):
     os.makedirs(out_dir)
 
-gts = {f.split("_")[0]: os.path.join(gt_dir, f) for f in os.listdir(gt_dir)}
+gts = {f.split("_")[0]: os.path.join(gt_dir, f) for f in os.listdir(gt_dir) if f.endswith(("_gt.wav", "_gt.mp3"))}
 runs = []
 for f in os.listdir(event_dir):
     key = f[:-4].split("_")[0]  # Assuming the file name starts with the key
@@ -43,14 +43,14 @@ for f in os.listdir(event_dir):
 def command(recording, gt, out_path):
     return f"python run_{mode}.py --event_path {recording} --gt_path {gt} --out_path {out_path}"
 def existing_files():
-    return [i.split("_hat")[0] for i in os.listdir(out_dir)]
+    return [i.split("_hat")[0] for i in os.listdir(out_dir) if mode in i]
 #%%
 for run in tqdm(runs, leave=True):
     out_path, recording, gt = run["out"], run["event"], run["gt"]
     out_path_minimal = os.path.basename(out_path).split("_hat")[0]
     if out_path_minimal in existing_files():
         i = existing_files().index(out_path_minimal)
-        print(f"File {list(os.listdir(out_dir))[i]} already exists")
+        print(f"File {out_path_minimal} already exists")
     else:
         print(f"Processing {recording}")
         subprocess.Popen(command(recording, gt, out_path), shell=True)

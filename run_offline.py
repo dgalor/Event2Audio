@@ -7,13 +7,13 @@ import matplotlib.pyplot as plt
 from pesq import pesq
 from pystoi import stoi
 import soundfile as sf
+from tqdm import trange
 import librosa
 import noisereduce
 import cv2
 import numpy as np
 from tqdm import tqdm
-from concurrent.futures import ThreadPoolExecutor
-from utils import align, butter_highpass_filter
+from utils import align, butter_highpass_filter, offline_optical_flow
 import time
 import math
 #%%
@@ -22,10 +22,10 @@ parser.add_argument(
     "--event_path", type=str, help="File name", default="EventRecordings/abespeech_chipbag.npy",
 )
 parser.add_argument(
-    "--gt_path", type=str, help="File name", default="GroundTruth/abespeech_gt.mp3",
+    "--gt_path", type=str, help="File name", default="GroundTruth/abespeech_gt.wav",
 )
 parser.add_argument(
-    "--out_path", type=str, help="File name", default="Output/abespeech_chipbag_offline_hat.wav",
+    "--out_path", type=str, help="File name", default="Output/abespeech_chipbag_hat_offline.wav",
 )
 args = parser.parse_args()
 
@@ -33,25 +33,25 @@ path = args.event_path
 gt_path = args.gt_path
 out_path = args.out_path
 #%%
-sr = 44100
-gt, _ = librosa.load(gt_path, sr=sr)
 
 if os.path.exists(out_path):
-    sr_, out_der_sr = wavfile.read(out_path)
-    assert sr_ == sr
+    sr, out_der_sr = wavfile.read(out_path)
+    gt, _ = librosa.load(gt_path, sr=sr)
     print("File {out_path} already exists: pesq is", pesq(sr, gt, out_der_sr, 'wb'), "stoi is", stoi(gt, out_der_sr, sr, extended=False))
     exit(0)
-
+    
+f = int(2.5e4)
+print("Loaded ground truth from:", gt_path)
+gt, _ = librosa.load(gt_path, sr=f)
 events = np.load(path)
-t0 = time.time()
+print("Loaded events from", path)
+t1 = time.time()
 
 events["x"] -= events["x"].min()
 events["y"] -= events["y"].min()
 good_inds = (events["x"] <= 100) & (events["y"] <= 100)
 events = events[good_inds]
 events["t"] = events["t"] - events["t"].min()
-
-f = int(2.5e4)
 
 nbins = int(math.ceil(events["t"].max()*1e-6 * f))
 
@@ -78,25 +78,7 @@ process = (
     process[:, 1] - process[:, 0]
 ).numpy()  # represent as positive (normed) event count - negative (normed) event count
 
-hist_norm = (
-    (process - process.min()) * 255 / (process.max() - process.min())
-).astype(np.uint8)
-
-# Use ThreadPoolExecutor for parallel processing
-with ThreadPoolExecutor() as executor:
-    with tqdm(total=len(hist_norm) - 1) as pbar:
-        def calculate_flow(i):
-            # Calculate optical flow for a pair of frames
-            flow = cv2.calcOpticalFlowFarneback(
-                hist_norm[i], hist_norm[i + 1], None, 0.5, 3, 15, 3, 5, 1.2, 0 #default params from opencv
-            )
-            # spatially integrate flow with importance weighting (based on spatial event counts)
-            w = np.abs(process[i]) + np.abs(process[i + 1])
-            w = w / w.sum().clip(1e-6)
-            pbar.update(1)
-            return (w[..., None]*flow).sum((0, 1))
-        results = [i for i in executor.map(calculate_flow, range(len(process) - 1))]
-flow_summed = np.stack(results, axis=0)
+flow_summed = offline_optical_flow(process)
 #%%
 
 s = np.pad(flow_summed, ((0, 1), (0, 0))).T
@@ -110,28 +92,39 @@ out_der_ = np.cumsum(out_der_, axis=-1)
 out_der_ = butter_highpass_filter(out_der_, 100, f)
 out_der_ = out_der_ / np.abs(out_der_).max()
 #%%
-#now resample out_der to gt
-out_der_sr = librosa.resample(out_der_, orig_sr=f, target_sr=sr)
-out_der_sr = noisereduce.reduce_noise(
-    y=out_der_sr, 
-    sr=sr, 
+#align the output derivative to the ground truth
+out_signal_f = align(out_der_, gt)
+
+#resample to standard 44100Hz
+out_signal_sr = librosa.resample(out_signal_f, orig_sr=f, target_sr=44100)
+
+winsize = 0.1 # window size in seconds for noise reduction
+#denoise the output using spectral gating
+out_signal_sr = noisereduce.reduce_noise(
+    y=out_signal_sr, 
+    sr=44100, 
     prop_decrease=0.8, 
     freq_mask_smooth_hz=50, 
     time_mask_smooth_ms=100, 
-    n_fft=4096,
+    win_length=int(44100 * winsize),
+    n_fft=int(44100 * winsize),  # Adjust based on window size
 )
+t = time.time() - t1
+print("Time taken:", t, "recording time:", events["t"].max()*1e-6)
+#%%
+#now resample signals to 16khz for compatibility with evals
+out_signal_16khz = librosa.resample(out_signal_sr, orig_sr=44100, target_sr=16000)
+gt_16khz, _ = librosa.load(gt_path, sr=16000)
 
-t = time.time() - t0
-print("Time taken:", t, "Recording time:", events["t"].max() * 1e-6)
-
+out_signal_16khz = align(out_signal_16khz, gt_16khz) # realign in case 1 pixel mismatch due to resampling
 #Now evaluate PESQ and STOI
-out_der_sr = align(out_der_sr, gt)
-
-out_der_16khz = librosa.resample(out_der_sr, orig_sr=sr, target_sr=16000)
-gt_16khz = librosa.resample(gt, orig_sr=sr, target_sr=16000)
-psq, sto = pesq(16000, gt_16khz, out_der_16khz, 'wb'), stoi(gt, out_der_sr, sr, extended=False)
+psq, sto = pesq(16000, gt_16khz, out_signal_16khz, 'wb'), stoi(gt_16khz, out_signal_16khz, 16000, extended=False)
 print("pesq is", psq, "stoi is", sto)
 
-out_path = out_path[:-4] + f"_pesq{psq:.2f}_stoi{sto:.2f}.wav"
-sf.write(out_path, out_der_sr, sr)
+out_path_44khz = out_path[:-4] + f"_44khz.wav"
+sf.write(out_path_44khz, out_signal_sr, 44100)
+
+out_path = out_path[:-4] + f"_pesq{round(psq, 2):.2f}_stoi{round(sto, 2):.2f}.wav"
+sf.write(out_path, out_signal_16khz, 16000)
+sf.write(gt_path[:-4] + "_16khz.wav", gt_16khz, 16000)
 #%%

@@ -1,6 +1,13 @@
-# Event2Audio: Event-Based Optical Vibration Sensing
+#  Event2Audio: Event-Based Optical Vibration Sensing (Official Implementation)
+### [Project Page](https://mingxuancai.github.io/event2audio/) | [Data](https://berkeley.box.com/s/4kdfmdx84xhot3145qkhnh1s2qg5w55e)
 
-This project reconstructs audio from video data captured by an event camera. It uses optical flow to analyze the vibrations of objects in the video and converts these vibrations back into sound.
+Small vibrations observed in video can unveil information beyond what is visual, such as sound and material properties. It is possible to passively record these vibrations when they are visually perceptible, or actively amplify their visual contribution with a laser beam when they are not perceptible.
+
+In this project we develop a vibration sensing system that relies on event-based sensing. This emerging sensing modality utilizes asynchronous pixels that only report pixel-level brightness changes, generating a sparse stream of events. These features makes event-based sensing highly efficient for capturing and processing fast motion.
+
+This repo implements the two methods described in the paper, which reconstruct audio from speckle-generated (raw) events.
+
+![Image](https://github.com/user-attachments/assets/493503b6-02e6-43a8-a5c1-d83b6fdc2222)
 
 ## Installation
 

@@ -3,7 +3,7 @@
 
 Small vibrations observed in video can unveil information beyond what is visual, such as sound and material properties. It is possible to passively record these vibrations when they are visually perceptible, or actively amplify their visual contribution with a laser beam when they are not perceptible.
 
-In this project we develop a vibration sensing system that relies on event-based sensing. This emerging sensing modality utilizes asynchronous pixels that only report pixel-level brightness changes, generating a sparse stream of events. These features makes event-based sensing highly efficient for capturing and processing fast motion.
+In this project we develop a vibration sensing system that relies on event-based cameras. This emerging imaging modality utilizes asynchronous pixels that only report pixel-level brightness changes, generating a sparse stream of events. These features make event-based cameras highly efficient for capturing and processing fast motion.
 
 This repo implements the two methods described in the paper, which reconstruct audio from speckle-generated (raw) events.
 

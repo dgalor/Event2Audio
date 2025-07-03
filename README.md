@@ -7,7 +7,7 @@ In this project we develop a vibration sensing system that relies on event-based
 
 This repo implements the two methods described in the paper, which reconstruct audio from speckle-generated (raw) events.
 
-![Image](https://github.com/user-attachments/assets/493503b6-02e6-43a8-a5c1-d83b6fdc2222)
+![Image](https://github.com/user-attachments/assets/0dab49ca-36de-4503-84b8-bcfc94d9ff07)
 
 ## Installation
 
